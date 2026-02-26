@@ -5,6 +5,9 @@ const bannerSchema = new mongoose.Schema({
         type: String,
         required: true
     },
+    publicId: {
+        type: String
+    },
     isActive: {
         type: Boolean,
         default: true

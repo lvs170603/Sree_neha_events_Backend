@@ -1,37 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
-const path = require('path');
 const fs = require('fs');
+const path = require('path');
 const Service = require('../models/Service');
 const auth = require('../middleware/auth');
-
-// Setup Multer Storage for Service Images
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, 'uploads/');
-    },
-    filename: function (req, file, cb) {
-        cb(null, 'service-' + Date.now() + path.extname(file.originalname));
-    }
-});
-
-const upload = multer({
-    storage: storage,
-    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
-    fileFilter: function (req, file, cb) {
-        const filetypes = /jpeg|jpg|png|webp|gif/i;
-        const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
-        const mimetype = filetypes.test(file.mimetype) || file.mimetype === 'application/octet-stream';
-
-        if (extname || mimetype) {
-            return cb(null, true);
-        } else {
-            console.error(`[MULTER REJECT] Blocked file upload. file.originalname: ${file.originalname}, file.mimetype: ${file.mimetype}`);
-            cb(new Error('Images Only!'));
-        }
-    }
-});
+const { upload, cloudinary } = require('../config/cloudinary');
 
 // GET all services
 router.get('/', async (req, res) => {
@@ -45,15 +18,18 @@ router.get('/', async (req, res) => {
 
 // POST a new service (Admin)
 router.post('/', [auth, upload.single('imageFile')], async (req, res) => {
-    // Determine the image path: use uploaded file if exists, otherwise fallback to the provided URL/string
     let imagePath = req.body.image;
+    let publicId = null;
+
     if (req.file) {
-        imagePath = `/uploads/${req.file.filename}`;
+        imagePath = req.file.path;
+        publicId = req.file.filename;
     }
 
     const service = new Service({
         title: req.body.title,
         image: imagePath,
+        publicId: publicId,
         category: req.body.category,
         price: req.body.price,
         duration: req.body.duration,
@@ -81,10 +57,13 @@ router.get('/:id', getService, (req, res) => {
 router.put('/:id', [auth, upload.single('imageFile'), getService], async (req, res) => {
     if (req.body.title != null) res.service.title = req.body.title;
 
-    // Update image if a new file is uploaded, otherwise update if a new text URL is provided
     if (req.file) {
-        // Optionally: delete old image file here if it exists in /uploads/
-        res.service.image = `/uploads/${req.file.filename}`;
+        // Destroy old image from Cloudinary if it exists
+        if (res.service.publicId) {
+            try { await cloudinary.uploader.destroy(res.service.publicId); } catch (e) { }
+        }
+        res.service.image = req.file.path;
+        res.service.publicId = req.file.filename;
     } else if (req.body.image != null) {
         res.service.image = req.body.image;
     }
@@ -108,32 +87,18 @@ router.put('/:id', [auth, upload.single('imageFile'), getService], async (req, r
 
 // DELETE a service (Admin)
 router.delete('/:id', [auth, getService], async (req, res) => {
-    console.log(`[DELETE] Received delete request for service ID: ${req.params.id}`);
     try {
-        // Optional: Delete physical file if it's local
-        if (res.service.image && res.service.image.startsWith('/uploads/')) {
-            console.log(`[DELETE] Attempting to delete physical file: ${res.service.image}`);
+        if (res.service.publicId) {
             try {
-                const filePath = path.join(__dirname, '..', res.service.image);
-                if (fs.existsSync(filePath)) {
-                    fs.unlinkSync(filePath);
-                    console.log(`[DELETE] Physical file deleted: ${filePath}`);
-                } else {
-                    console.log(`[DELETE] Physical file not found at: ${filePath}`);
-                }
-            } catch (fileErr) {
-                console.error('[DELETE] Error deleting physical file:', fileErr);
+                await cloudinary.uploader.destroy(res.service.publicId);
+            } catch (err) {
+                console.error('[DELETE] Cloudinary delete error:', err);
             }
-        } else {
-            console.log(`[DELETE] No physical file to delete. Image path: ${res.service.image}`);
         }
 
-        console.log(`[DELETE] Calling findByIdAndDelete for ID: ${req.params.id}`);
         await Service.findByIdAndDelete(req.params.id);
-        console.log(`[DELETE] Successfully deleted service ID: ${req.params.id}`);
         res.json({ message: 'Deleted Service' });
     } catch (err) {
-        console.error('[DELETE] Error deleting service:', err);
         res.status(500).json({ message: err.message });
     }
 });

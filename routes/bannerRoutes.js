@@ -1,37 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
 const Banner = require('../models/Banner');
 const auth = require('../middleware/auth');
-
-// Setup Multer Storage
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, 'uploads/');
-    },
-    filename: function (req, file, cb) {
-        cb(null, Date.now() + path.extname(file.originalname)); // Append extension
-    }
-});
-
-const upload = multer({
-    storage: storage,
-    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
-    fileFilter: function (req, file, cb) {
-        const filetypes = /jpeg|jpg|png|webp|gif/i;
-        const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
-        const mimetype = filetypes.test(file.mimetype) || file.mimetype === 'application/octet-stream';
-
-        if (extname || mimetype) {
-            return cb(null, true);
-        } else {
-            console.error(`[MULTER REJECT] Blocked file upload. file.originalname: ${file.originalname}, file.mimetype: ${file.mimetype}`);
-            cb(new Error('Images Only!'));
-        }
-    }
-});
+const { upload, cloudinary } = require('../config/cloudinary');
 
 // GET all active banners (Public)
 router.get('/', async (req, res) => {
@@ -51,11 +22,9 @@ router.post('/', [auth, upload.single('image')], async (req, res) => {
         return res.status(400).json({ message: 'No image provided' });
     }
 
-    // Create the URL path that the frontend will use to access the image
-    const imageUrl = `/uploads/${req.file.filename}`;
-
     const banner = new Banner({
-        imageUrl: imageUrl,
+        imageUrl: req.file.path,
+        publicId: req.file.filename,
         isActive: true
     });
 
@@ -75,15 +44,11 @@ router.delete('/:id', auth, async (req, res) => {
             return res.status(404).json({ message: 'Banner not found' });
         }
 
-        // Delete file from filesystem
-        if (banner.imageUrl && banner.imageUrl.startsWith('/uploads/')) {
+        if (banner.publicId) {
             try {
-                const filePath = path.join(__dirname, '..', banner.imageUrl);
-                if (fs.existsSync(filePath)) {
-                    fs.unlinkSync(filePath);
-                }
-            } catch (fileErr) {
-                console.error('[BANNER DELETE] Error deleting physical file:', fileErr);
+                await cloudinary.uploader.destroy(banner.publicId);
+            } catch (err) {
+                console.error('[BANNER DELETE] Cloudinary delete error:', err);
             }
         }
 

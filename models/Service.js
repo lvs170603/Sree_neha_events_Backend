@@ -9,6 +9,9 @@ const serviceSchema = new mongoose.Schema({
         type: String,
         required: true,
     },
+    publicId: {
+        type: String
+    },
     category: {
         type: String,
         required: true,
