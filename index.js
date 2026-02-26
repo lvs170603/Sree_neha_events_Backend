@@ -18,7 +18,24 @@ if (!fs.existsSync(uploadDir)) {
 }
 
 // Middleware
-app.use(cors());
+const allowedOrigins = [
+    'https://sreenehaevents.vercel.app',
+    'http://localhost:5173'
+];
+
+app.use(cors({
+    origin: function (origin, callback) {
+        // Allow requests with no origin (mobile apps, curl, Postman) or from allowed origins
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
+}));
 app.use(express.json());
 
 // Serve static files from the uploads directory
