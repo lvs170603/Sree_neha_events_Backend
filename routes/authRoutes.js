@@ -5,17 +5,14 @@ const nodemailer = require('nodemailer');
 const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 
-// Configure Nodemailer transporter (Gmail SMTP)
+// Configure Nodemailer transporter (Brevo SMTP - works reliably on cloud servers)
 const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true, // Use SSL
+    host: 'smtp-relay.brevo.com',
+    port: 587,
+    secure: false, // STARTTLS
     auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-    },
-    tls: {
-        rejectUnauthorized: false
+        user: process.env.BREVO_USER,  // Your Brevo login email
+        pass: process.env.BREVO_SMTP_KEY // Brevo SMTP key (NOT your account password)
     }
 });
 
