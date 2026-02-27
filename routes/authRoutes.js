@@ -1,20 +1,28 @@
 const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
-const nodemailer = require('nodemailer');
+const axios = require('axios');
 const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 
-// Configure Nodemailer transporter (Brevo SMTP - works reliably on cloud servers)
-const transporter = nodemailer.createTransport({
-    host: 'smtp-relay.brevo.com',
-    port: 587,
-    secure: false, // STARTTLS
-    auth: {
-        user: process.env.BREVO_USER,  // Your Brevo login email
-        pass: process.env.BREVO_SMTP_KEY // Brevo SMTP key (NOT your account password)
-    }
-});
+// Helper: Send email via Brevo HTTP REST API (port 443 - never blocked by firewalls)
+const sendEmailViaBrevo = async (to, subject, htmlContent) => {
+    await axios.post(
+        'https://api.brevo.com/v3/smtp/email',
+        {
+            sender: { name: 'Sree Neha Events', email: process.env.BREVO_USER },
+            to: [{ email: to }],
+            subject: subject,
+            htmlContent: htmlContent
+        },
+        {
+            headers: {
+                'api-key': process.env.BREVO_API_KEY,
+                'Content-Type': 'application/json'
+            }
+        }
+    );
+};
 
 // Helper function to generate a 6-digit OTP
 const generateOTP = () => {
@@ -41,22 +49,19 @@ router.post('/send-otp', async (req, res) => {
         user.otpExpires = Date.now() + 10 * 60 * 1000;
         await user.save();
 
-        // Send Email
-        const mailOptions = {
-            from: `"Sree Neha Events" <${process.env.BREVO_USER}>`,
-            to: email,
-            subject: 'Admin Dashboard Login OTP',
-            html: `<p>Your One-Time Password (OTP) for the Admin Dashboard is:</p>
-                   <h2>${otp}</h2>
-                   <p>This code will expire in 10 minutes.</p>
-                   <p>If you did not request this, please ignore this email.</p>`
-        };
-
-        await transporter.sendMail(mailOptions);
+        // Send Email via Brevo HTTP API (avoids SMTP port blocking)
+        await sendEmailViaBrevo(
+            email,
+            'Admin Dashboard Login OTP',
+            `<p>Your One-Time Password (OTP) for the Admin Dashboard is:</p>
+             <h2 style="letter-spacing:4px;">${otp}</h2>
+             <p>This code will expire in 10 minutes.</p>
+             <p>If you did not request this, please ignore this email.</p>`
+        );
 
         res.status(200).json({ message: 'OTP sent successfully to ' + email });
     } catch (err) {
-        console.error('Error sending OTP:', err);
+        console.error('Error sending OTP:', err.response?.data || err.message);
         res.status(500).json({ message: 'Failed to send OTP. Check email configuration.' });
     }
 });
