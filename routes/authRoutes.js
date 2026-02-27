@@ -43,7 +43,7 @@ router.post('/send-otp', async (req, res) => {
 
         // Send Email
         const mailOptions = {
-            from: process.env.EMAIL_USER,
+            from: `"Sree Neha Events" <${process.env.BREVO_USER}>`,
             to: email,
             subject: 'Admin Dashboard Login OTP',
             html: `<p>Your One-Time Password (OTP) for the Admin Dashboard is:</p>
